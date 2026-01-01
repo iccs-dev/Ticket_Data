@@ -2,6 +2,7 @@ import pandas as pd
 import pymysql
 import datetime
 import os
+from dateutil.relativedelta import relativedelta
 
 # ==============================
 # DB CONFIG (Direct MySQL connection)
@@ -19,8 +20,14 @@ os.makedirs(os.path.dirname(output_path), exist_ok=True)
 # ==============================
 # DATE RANGE (from 1st Jan this year to today)
 # ==============================
+# today = datetime.date.today()
+# datefrom = datetime.date(today.year, 1, 1)
+# dateto = today
+
 today = datetime.date.today()
-datefrom = datetime.date(today.year, 1, 1)
+start_date = today - relativedelta(months=15)
+
+datefrom = datetime.date(start_date.year, start_date.month, 1)
 dateto = today
 
 # ==============================
@@ -44,6 +51,7 @@ SELECT
     ticketinfos.Status as `Department Ticket Status`,
     ticketinfos.Issue_status as `Employee Issue Status`,
     ticketinfos.Affected_Counr_users as `Total Users Affected`,
+    time_contoll_lists.L1_TAT_Time AS `L1_TAT_Time`,
     
     IF(TIMEDIFF(NOW(), ticketinfos.created_at) < time_contoll_lists.L1_TAT_Time,
         TIMEDIFF(time_contoll_lists.L1_TAT_Time, TIMEDIFF(NOW(), ticketinfos.created_at)),
@@ -85,10 +93,49 @@ conn = pymysql.connect(
     port=DB_PORT
 )
 
+# final_df = pd.read_sql(tck_query, conn)
+
+# # ==============================
+# # SAVE TO CSV
+# # ==============================
+# final_df.to_csv(output_path, index=False)
+# print(f"✅ Report saved: {output_path}")
+
+
 final_df = pd.read_sql(tck_query, conn)
+conn.close()
+
+# ==============================
+# CONVERT MySQL Timedelta → HH:MM:SS
+# ==============================
+def convert_to_total_hms(x):
+    if pd.isna(x):
+        return ""
+    try:
+        td = pd.to_timedelta(x)
+        total_seconds = int(td.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    except:
+        return x
+
+columns_to_clean = [
+    "L1_TAT_Time",      # newly added
+    "L1 TAT Time",
+    "L2 TAT Time",
+    "L3 TAT Time",
+    "Total Resolve Time"
+]
+
+for col in columns_to_clean:
+    if col in final_df.columns:
+        final_df[col] = final_df[col].apply(convert_to_total_hms)
 
 # ==============================
 # SAVE TO CSV
 # ==============================
 final_df.to_csv(output_path, index=False)
 print(f"✅ Report saved: {output_path}")
+
